@@ -1,0 +1,100 @@
+#:local addressList "_black1" 
+:local addressList "ssh_stage3"
+:local subnet "0.0.0.0/0"
+:local newlist "_black0_sc"
+:local n 0
+:local lim 64
+:local outputFile "i-"
+:local ipcontent ""
+:global count  0
+:local a 0
+:local b 0
+:local c 0
+:global ii 0
+:global cnt 0
+:local posin 0
+:local tstr ""
+:local indx 0
+:local arrIP {1}
+:local arrIND {1}
+:local arrSUB {1}
+:global Inn 0
+:global status ""
+:global divnet ""
+:global remAdd ""
+:global bigTime ""
+:global endTime ""
+#--------------------------------------------основной скрипт-----------------------------------------------------------------------
+:set $bigTime ([/system clock get date] . " " . [/system clock get time])
+:set $status "Script запущен"
+:set $ipcontent  ( $ipcontent . "------------------------------ " . $bigTime . "  --------------------------------- "  . " \n");
+# Получаем список IP-адресов из заданного address-list
+     :local ipList [/ip firewall address-list find list=$addressList]
+# Проходим по каждому IP-адресу
+         :foreach ip in=$ipList do={
+              :local ipAddr [/ip firewall address-list get $ip address]
+                    :if ([/ip firewall address-list get $ip address] in $subnet) do={
+                                   :set  $count  ($count +1)
+#-------------вычисляем индекс подсети------------------------------------------------------------------------- 
+                                   :set $posin ([:find $ipAddr "."])
+                                   :set $a ([:pick $ipAddr 0 $posin ])
+                                   :set $tstr ([pick $ipAddr  ($posin+1)  ([:len ($ipAddr)] - $posin+1) ])                          
+                                   :set $posin ([:find $tstr "."])
+                                   :set $b ([:pick $tstr 0 $posin ])
+                                   :set $tstr ([pick $tstr  ($posin+1)  ([:len ($tstr)] - $posin+3) ])
+                                   :set $posin ([:find $tstr "."])
+                                   :set $c ([:pick $tstr 0 $posin ])
+                                   :set $indx ($a*65536 + $b*256 + $c)
+#------------$indx - индекс подсети ---------------------------------------------------------------------------------
+#----------------------------------------------------заполняем массивы----------------------------------------------
+                                    :if ( ($arrIP->$indx)>0) do={ 
+                                                 :set ($arrIP->$indx) ($arrIP->$indx + 1);
+                                                 :set $cnt ($cnt +1);
+                                           } else={
+                                                 :set $Inn ($Inn +1);
+                                                 :set ($arrIP->$indx) 1;
+                                                 :set ($arrIND->$Inn) $indx
+                                                 :set ($arrSUB->$Inn) ( $a . "." . $b . "." . $c . ".0/24 ")
+                                           }
+                           }
+             }
+:set $status  "Обработка завершена - формируется файл"
+#------------------------------------------------------------------------------------------------------------------------------
+                  :set $ipcontent  ( $ipcontent . " \n  Количество IP адресов в address-list : " . $addressList . " - " . $count . "\n")
+                  :set $ipcontent  ( $ipcontent . "  Количество обработанных уникальных подсетей размера /24 : " . $Inn )
+                  :set $ipcontent  ( $ipcontent . " \n  Превышение количества IP адресов по подсетям: \n" ) 
+                  :for i from=1 to=$Inn do={
+                             :set $cnt $i
+                             :set $indx  ($arrIND->$i)
+                             :if (($arrIP->$indx)>$lim) do={
+                                                     :set $n ($n + 1) 
+                                                     :set $ii 0  
+                                                     :set $ipcontent  ( $ipcontent . $n . ") ". ($arrSUB->$i) . "-> " . ($arrIP->$indx) )
+#-------------------------------------------------------------------------------------------------------------------------------
+                                                    :set $divnet  ([:pick ($arrSUB->$i) 0 ([:len ($arrSUB->$i)] -1) ])
+                                                     :set $status (" Обрабатываем сеть " . $divnet )
+                                                     :foreach ip in=$ipList do={
+                                                              :set $ipAddr [/ip firewall address-list get $ip address]   
+                                                              :if ($ipAddr in $divnet) do={
+                                                                           /ip firewall address-list remove [find where address=$ipAddr]
+                                                                           :set $ii ($ii + 1)
+                                                                           :set $remAdd $ipAddr
+                                                                         }
+                                                         }
+                                                        :if ($ii>0) do={ /ip firewall address-list add address=$divnet list=$newlist   } 
+                                                        :set $status (" Обработка сети " . $divnet . "  завершена. Удалено " . $ii . " адресов ")  
+                                                        :set $ipcontent  ( $ipcontent . ".  Удалено " .  $ii . " адресов"  . " \n")  
+#-------------------------------------------------------------------------------------------------------------------------------
+                                            }
+                            }
+                   :set $endTime ([/system clock get date] . " " . [/system clock get time])  
+                   :set $ipcontent  ( $ipcontent . "------------------------------ " . $endTime . "  --------------------------------- "  . " \n");
+#--------------------------------   конец обработки   ----------------------------------------------------    
+
+# Создаём файл и записываем в него текст
+
+:set $outputFile ($outputFile . ([:pick $bigTime 0 3]) . "-" . ([:pick $bigTime 4 6])  . ".txt")
+/file print  file=$outputFile
+delay 2  
+/file set $outputFile contents=$ipcontent 
+ :set status " Скрипт завершен"
