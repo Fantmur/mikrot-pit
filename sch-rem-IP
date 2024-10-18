@@ -97,4 +97,4 @@
 /file print  file=$outputFile
 delay 2  
 /file set $outputFile contents=$ipcontent 
- :set status " Скрипт завершен"
+ :set status " Скрипт завершен !!!!"
